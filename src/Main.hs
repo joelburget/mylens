@@ -8,11 +8,36 @@ module Main where
 import Data.Complex
 import Data.Functor.Const
 import Data.Functor.Identity
+import Data.Profunctor
 
-type Lens s t a b = forall f. Functor f => (a -> f b) -> s -> f t
+import Data.Profunctor.Unsafe ((#.))
+
+type Lens s t a b = forall   f. Functor f                 => (a -> f b) -> s -> f t
+
+-- Generalize `->` to `(Profunctor p =>) p`.
+type Iso  s t a b = forall p f. (Functor f, Profunctor p) => p a (f b)  -> p s (f t)
 
 type Simple f s a = f s s a a
 type Lens' s a = Simple Lens s a
+type Iso'  s a = Simple Iso  s a
+
+iso :: (s -> a) -> (b -> t) -> Iso s t a b
+iso sa bt = dimap sa (fmap bt)
+
+data Exchange a b s t = Exchange (s -> a) (b -> t)
+
+instance Functor (Exchange a b s) where
+  fmap g' (Exchange f g) = Exchange f (g' . g)
+
+instance Profunctor (Exchange a b) where
+  dimap f' g' (Exchange f g) = Exchange (f . f') (g' . g)
+
+withIso :: Iso s t a b -> ((s -> a) -> (b -> t) -> r) -> r
+withIso ai k = case ai (Exchange id Identity) of
+  Exchange sa bt -> k sa (runIdentity #. bt)
+
+from :: Iso s t a b -> Iso b a t s
+from l = withIso l $ \ sa bt -> iso bt sa
 
 view :: Lens s t a b -> s -> a
 view l s = getConst (l Const s)
