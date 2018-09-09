@@ -23,11 +23,17 @@ over l f = runIdentity . l (Identity . f)
 set :: Lens s t a b -> b -> s -> t
 set l = over l . const
 
-realLens :: RealFloat a => Lens' (Complex a) a
+lens :: (s -> a) -> (s -> b -> t) -> Lens s t a b
+lens get' set' f s = set' s <$> f (get' s)
+
+realLens, realLens' :: RealFloat a => Lens' (Complex a) a
 realLens f (r :+ i) = fmap (:+ i) (f r)
 
-imagLens :: RealFloat a => Lens' (Complex a) a
+imagLens, imagLens' :: RealFloat a => Lens' (Complex a) a
 imagLens f (r :+ i) = fmap (r :+) (f i)
+
+realLens' = lens (\(r :+ _) -> r) (\(_ :+ i) r -> r :+ i)
+imagLens' = lens (\(_ :+ i) -> i) (\(r :+ _) i -> r :+ i)
 
 (<&>) :: Functor f => f a -> (a -> b) -> f b
 (<&>) = flip fmap
