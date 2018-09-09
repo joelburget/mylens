@@ -1,4 +1,5 @@
-{-# language Rank2Types #-}
+{-# language Rank2Types    #-}
+{-# language TupleSections #-}
 module Main where
 
 import Data.Complex
@@ -25,6 +26,13 @@ realLens f (r :+ i) = fmap (:+ i) (f r)
 imagLens :: RealFloat a => Lens' (Complex a) a
 imagLens f (r :+ i) = fmap (r :+) (f i)
 
+_1 :: Lens (a, b) (a', b) a a'
+_1 f (a, b) = (,b) <$> f a
+
+_2 :: Lens (a, b) (a, b') b b'
+_2 f (a, b) = (a,) <$> f b
+
 main :: IO ()
 main = do
-  print $ set realLens 1 (0 :+ 1)
+  print $ set realLens (1 :: Double) (0 :+ 1)
+  print $ view _1 ('x', 'y')
