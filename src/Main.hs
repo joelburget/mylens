@@ -18,22 +18,40 @@ import Data.Tagged
 import Data.Void                   (absurd, vacuous)
 
 
-type Lens      s t a b = forall   f. Functor f                    => (a -> f b) -> s -> f t
+type Lens      s t a b
+  = forall   f. Functor f
+  => (a -> f b) -> s -> f t
 
-type Traversal s t a b = forall   f. Applicative f                => (a -> f b) -> s -> f t
+type Traversal s t a b
+  = forall   f. Applicative f
+  => (a -> f b) -> s -> f t
 
-type Iso       s t a b = forall p f. (Functor f, Profunctor p)    => p a (f b)  -> p s (f t)
+type Iso       s t a b
+  = forall p f. (Functor f, Profunctor p)
+  => p a (f b)  -> p s (f t)
 
-type Prism     s t a b = forall p f. (Applicative f, Choice p)    => p a (f b)  -> p s (f t)
+type Prism     s t a b
+  = forall p f. (Applicative f, Choice p)
+  => p a (f b)  -> p s (f t)
 
-type Getter    s   a   = forall   f. (Functor f, Contravariant f) => (a -> f a) -> s -> f s
+type Getter    s   a
+  = forall   f. (Functor f, Contravariant f)
+  => (a -> f a) -> s -> f s
 
-type Optic p f s t a b =                                             p a (f b)  -> p s (f t)
-type Optic' p f t b    =                                             p b (f b)  -> p t (f t)
+type Fold      s   a
+  = forall   f. (Applicative f, Contravariant f)
+  => (a -> f a) -> s -> f s
 
-type Review t b = Tagged b (Identity b) -> Tagged t (Identity t)
+type Optic p f s t a b
+  = p a (f b)  -> p s (f t)
+type Optic' p f t b
+  = p b (f b)  -> p t (f t)
+
+type Review t b
+  = Tagged b (Identity b) -> Tagged t (Identity t)
 -- in other words,
-type Review' t b = Optic' Tagged Identity t b
+type Review' t b
+  = Optic' Tagged Identity t b
 
 -- Traversal:
 --
@@ -98,14 +116,40 @@ isoToPrism = id
 --
 -- Getter:
 --
---   for f to be both Functor and Contravariant implies `f a` doesn't contain
---   any `a`s at all!
+-- A getter describes how to retrieve a single value
+--
+-- > for f to be both Functor and Contravariant implies `f a` doesn't contain
+-- > any `a`s at all!
 --
 -- citation: https://www.reddit.com/r/haskell/comments/5vb6x1/how_do_i_learn_lensinternals/de0uz1v
 -- Witness:
 
-fcoerce :: (Functor f, Contravariant f) => f a -> f b
-fcoerce = vacuous . contramap absurd
+coerceGetterF :: (Functor f, Contravariant f) => f a -> f b
+coerceGetterF = vacuous . contramap absurd
+
+-- Fold:
+--
+-- A `Fold` describes how to retrieve multiple values
+--
+-- Note how conspicuously `Fold` and `Getter` are:
+--
+-- TODO: understand
+-- "A `Getter` is a legal `Fold` that just ignores the supplied `Monoid`
+--
+-- * Every `Getter`: Functor f,   Contravariant f
+--   is a valid          v              v
+--           `Fold`: Applicative f, Contravariant f
+--
+-- Witness:
+
+getterToFold :: Getter s a -> Fold s a
+getterToFold = id
+
+-- Like `Getter`, note that the functor used in the `Fold` can't contain any
+-- values:
+
+coerceFoldF :: (Applicative f, Contravariant f) => f a -> f b
+coerceFoldF = vacuous . contramap absurd
 
 -- A "is a limited form of a `Prism` that can only be used for `re` operations.
 -- Witness:
