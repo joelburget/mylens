@@ -109,6 +109,23 @@ prismToTraversal = id
 isoToPrism :: Iso s t a b -> Prism s t a b
 isoToPrism = id
 
+-- Iso's are everything actually:
+
+isoToLens :: Iso s t a b -> Lens s t a b
+isoToLens = id
+
+isoToTraversal :: Iso s t a b -> Traversal s t a b
+isoToTraversal = id
+
+isoToGetter :: Iso s s a a -> Getter s a
+isoToGetter = id
+
+isoToFold :: Iso s s a a -> Fold s a
+isoToFold = id
+
+isoToReview :: Iso s s a a -> Review s a
+isoToReview = id
+
 --
 --   Here `Prism` strenthens the constraints:
 --   * `Functor` to `Applicative` because it doesn't touch exactly one position
