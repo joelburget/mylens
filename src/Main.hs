@@ -1,17 +1,22 @@
 {-# language FlexibleInstances      #-}
 {-# language FunctionalDependencies #-}
+{-# language LambdaCase             #-}
 {-# language MultiParamTypeClasses  #-}
 {-# language Rank2Types             #-}
 {-# language TupleSections          #-}
 module Main where
 
+import Control.Monad.Reader
 import Data.Complex
 import Data.Functor.Const
 import Data.Functor.Contravariant
 import Data.Functor.Identity
+import Data.Monoid                 (First(..))
 import Data.Profunctor
+import Data.Profunctor.Unsafe      ((#.), (.#))
+import Data.Tagged
+import Data.Void                   (absurd, vacuous)
 
-import Data.Profunctor.Unsafe ((#.))
 
 type Lens      s t a b = forall   f. Functor f                    => (a -> f b) -> s -> f t
 
@@ -24,6 +29,11 @@ type Prism     s t a b = forall p f. (Applicative f, Choice p)    => p a (f b)  
 type Getter    s   a   = forall   f. (Functor f, Contravariant f) => (a -> f a) -> s -> f s
 
 type Optic p f s t a b =                                             p a (f b)  -> p s (f t)
+type Optic' p f t b    =                                             p b (f b)  -> p t (f t)
+
+type Review t b = Tagged b (Identity b) -> Tagged t (Identity t)
+-- in other words,
+type Review' t b = Optic' Tagged Identity t b
 
 -- Traversal:
 --
@@ -42,6 +52,12 @@ type Optic p f s t a b =                                             p a (f b)  
 --   traverse _ []     = pure []
 --   traverse f (x:xs) = (:) <$> f x <*> traverse f xs
 --
+-- Every lens is a valid Traversal. Witness:
+
+lensToTraversal :: Lens s t a b -> Traversal s t a b
+lensToTraversal = id
+
+--
 -- Iso:
 --
 -- We generalize `->` to `(Profunctor p =>) p`. Why?
@@ -58,25 +74,55 @@ type Optic p f s t a b =                                             p a (f b)  
 --   is a valid          v            v
 --     `Traversal`: Applicative f
 --
+--   witness:
+
+prismToTraversal :: Prism s t a b -> Traversal s t a b
+prismToTraversal = id
+
+--
 --   Here `Prism` adds `Choice p`, meaning TODO
 --
 -- * Every `Iso`:   Functor f,     Profunctor p
 --   is a valid           v             v
 --         `Prism`: Applicative f, Choice p
 --
+--   witness:
+
+isoToPrism :: Iso s t a b -> Prism s t a b
+isoToPrism = id
+
+--
 --   Here `Prism` strenthens the constraints:
 --   * `Functor` to `Applicative` because it doesn't touch exactly one position
 --   * `Profunctor` to `Choice` because TODO
+--
+-- Getter:
+--
+--   for f to be both Functor and Contravariant implies `f a` doesn't contain
+--   any `a`s at all!
+--
+-- citation: https://www.reddit.com/r/haskell/comments/5vb6x1/how_do_i_learn_lensinternals/de0uz1v
+-- Witness:
 
+fcoerce :: (Functor f, Contravariant f) => f a -> f b
+fcoerce = vacuous . contramap absurd
 
-type Simple f s a = f s s a a
-type Lens' s a = Simple Lens s a
-type Iso'  s a = Simple Iso  s a
+-- A "is a limited form of a `Prism` that can only be used for `re` operations.
+-- Witness:
+
+prismToReview :: Prism' t b -> Review t b
+prismToReview = id
+
+type Simple f s a  = f s s a a
+type Lens' s a     = Simple Lens s a
+type Iso'  s a     = Simple Iso  s a
+type Prism' s a    = Simple Prism s a
 type Getting r s a = (a -> Const r a) -> s -> Const r s
 
 iso :: (s -> a) -> (b -> t) -> Iso s t a b
 iso sa bt = dimap sa (fmap bt)
 
+-- used to provide access to the two parts of an iso
 data Exchange a b s t = Exchange (s -> a) (b -> t)
 
 instance Functor (Exchange a b s) where
@@ -88,6 +134,64 @@ instance Profunctor (Exchange a b) where
 withIso :: Iso s t a b -> ((s -> a) -> (b -> t) -> r) -> r
 withIso ai k = case ai (Exchange id Identity) of
   Exchange sa bt -> k sa (runIdentity #. bt)
+
+-- used to provide access to the two parts of a prism
+data Market a b s t = Market (b -> t) (s -> Either t a)
+
+instance Functor (Market a b s) where
+  fmap h (Market f g) = Market (h . f) (either (Left . h) Right . g)
+
+instance Profunctor (Market a b) where
+  dimap f' g' (Market f g) = Market (g' . f) (left' g' . g . f')
+
+instance Choice (Market a b) where
+  left' (Market f g) = Market (Left . f) $ \case
+    Left x -> case g x of
+      Left y -> Left (Left y)
+      Right y -> Right y
+    Right c -> Left (Right c)
+  -- TODO: implement right'
+
+withPrism :: Prism s t a b -> ((b -> t) -> (s -> Either t a) -> r) -> r
+withPrism p k = case p (Market Identity Right) of
+  Market bt sa -> k (runIdentity #. bt) (left' runIdentity . sa)
+
+prism :: (b -> t) -> (s -> Either t a) -> Prism s t a b
+prism bt seta = dimap seta (either pure (fmap bt)) . right'
+
+matching :: Prism s t a b -> s -> Either t a
+matching k = withPrism k $ \_ seta -> seta
+
+_Left :: Prism (Either a c) (Either b c) a b
+_Left = prism Left $ either Right (Left . Right)
+
+_Right :: Prism (Either c a) (Either c b) a b
+_Right = prism Right $ either (Left . Left) Right
+
+-- TODO: rewrite  / become more comfortable with this section
+
+re :: Review t b -> Getter b t
+re p = to (runIdentity #. unTagged #. p .# Tagged .# Identity)
+
+to :: (Profunctor p, Contravariant f) => (s -> a) -> Optic' p f s a
+to k = dimap k (contramap k)
+
+reviewSimple :: Prism' s a -> a -> s
+reviewSimple r = runIdentity . unTagged . r . Tagged . Identity
+
+review :: MonadReader b m => Optic' Tagged Identity t b -> m t
+review r = asks $ runIdentity . unTagged . r . Tagged . Identity
+
+foldMapOf :: Getting r s a -> (a -> r) -> s -> r
+foldMapOf l f = getConst #. l (Const #. f)
+
+preview :: Prism' s a -> s -> Maybe a
+preview p s = getFirst #. foldMapOf p (First #. Just) $ s
+
+(^?) :: s -> Prism' s a -> Maybe a
+(^?) s p = preview p s
+
+--
 
 from :: Iso s t a b -> Iso b a t s
 from l = withIso l $ \ sa bt -> iso bt sa
