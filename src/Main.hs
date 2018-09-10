@@ -1,4 +1,5 @@
 {-# language FlexibleInstances      #-}
+{-# language KindSignatures         #-}
 {-# language FunctionalDependencies #-}
 {-# language LambdaCase             #-}
 {-# language MultiParamTypeClasses  #-}
@@ -17,6 +18,10 @@ import Data.Profunctor.Unsafe      ((#.), (.#))
 import Data.Tagged
 import Data.Void                   (absurd, vacuous)
 
+
+type Equality s t a b
+  = forall (p :: * -> * -> *) f.
+    p a (f b) -> p s (f t)
 
 type Lens      s t a b
   = forall   f. Functor f
@@ -126,6 +131,13 @@ isoToFold = id
 isoToReview :: Iso s s a a -> Review s a
 isoToReview = id
 
+-- Except an `Equality`, that is. An `Equality` is an `Iso`:
+
+equalityToIso :: Equality s t a b -> Iso s t a b
+equalityToIso = id
+
+-- An Equality is a witness that a ~ s and b ~ t.
+--
 --
 --   Here `Prism` strenthens the constraints:
 --   * `Functor` to `Applicative` because it doesn't touch exactly one position
@@ -175,6 +187,7 @@ prismToReview :: Prism' t b -> Review t b
 prismToReview = id
 
 type Simple f s a  = f s s a a
+type Equality' s a = Simple Equality s a
 type Lens' s a     = Simple Lens s a
 type Iso'  s a     = Simple Iso  s a
 type Prism' s a    = Simple Prism s a
